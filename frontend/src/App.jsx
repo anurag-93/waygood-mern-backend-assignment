@@ -1,4 +1,6 @@
-﻿import InfoCard from "./components/InfoCard.jsx";
+﻿import React from "react";
+import "./styles.css";
+import InfoCard from "./components/InfoCard.jsx";
 import SignalStrip from "./components/SignalStrip.jsx";
 import SpotlightList from "./components/SpotlightList.jsx";
 import {

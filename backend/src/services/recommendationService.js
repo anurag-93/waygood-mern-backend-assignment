@@ -2,44 +2,9 @@
 const Student = require("../models/Student");
 const HttpError = require("../utils/httpError");
 
-function calculateScore(student, program) {
-  let score = 0;
-  const reasons = [];
-
-  if (student.targetCountries.includes(program.country)) {
-    score += 35;
-    reasons.push(`Preferred country match: ${program.country}`);
-  }
-
-  if (
-    student.interestedFields.some((field) =>
-      program.field.toLowerCase().includes(field.toLowerCase())
-    )
-  ) {
-    score += 30;
-    reasons.push(`Field alignment: ${program.field}`);
-  }
-
-  if (student.maxBudgetUsd >= program.tuitionFeeUsd) {
-    score += 20;
-    reasons.push("Within budget range");
-  }
-
-  if (student.preferredIntake && program.intakes.includes(student.preferredIntake)) {
-    score += 10;
-    reasons.push(`Preferred intake available: ${student.preferredIntake}`);
-  }
-
-  if ((student.englishTest?.score || 0) >= program.minimumIelts) {
-    score += 5;
-    reasons.push("English test score meets requirement");
-  }
-
-  return {
-    score,
-    reasons,
-  };
-}
+// Build personalized program recommendations using MongoDB
+// aggregation instead of calculating recommendation scores
+// in application-level JavaScript.
 
 async function buildProgramRecommendations(studentId) {
   const student = await Student.findById(studentId).lean();
@@ -48,23 +13,214 @@ async function buildProgramRecommendations(studentId) {
     throw new HttpError(404, "Student not found.");
   }
 
-  const candidatePrograms = await Program.find({
-    country: { $in: student.targetCountries },
-  })
-    .limit(25)
-    .lean();
+  // Initially restrict candidates to the student's preferred countries.
+// This reduces the number of documents processed by later stages.
 
-  const recommendations = candidatePrograms
-    .map((program) => {
-      const { score, reasons } = calculateScore(student, program);
-      return {
-        ...program,
-        matchScore: score,
-        reasons,
-      };
-    })
-    .sort((left, right) => right.matchScore - left.matchScore)
-    .slice(0, 5);
+  const candidatePrograms = await Program.aggregate([
+    {
+      $match: {
+        country: {
+          $in: student.targetCountries || [],
+        },
+      },
+    },
+
+    {
+      // Calculate the recommendation score inside MongoDB.
+// Scores are based on country, field, budget, intake, and IELTS fit.
+      $set: {
+        matchScore: {
+          $add: [
+            {
+              $cond: [
+                {
+                  $in: ["$country", student.targetCountries || []],
+                },
+                35,
+                0,
+              ],
+            },
+
+            {
+              $cond: [
+                {
+                  $anyElementTrue: {
+                    $map: {
+                      input: student.interestedFields || [],
+                      as: "fieldPreference",
+                      in: {
+                        $regexMatch: {
+                          input: "$field",
+                          regex: "$$fieldPreference",
+                          options: "i",
+                        },
+                      },
+                    },
+                  },
+                },
+                30,
+                0,
+              ],
+            },
+
+            {
+              $cond: [
+                {
+                  $gte: [
+                    student.maxBudgetUsd || 0,
+                    "$tuitionFeeUsd",
+                  ],
+                },
+                20,
+                0,
+              ],
+            },
+
+            {
+              $cond: [
+                {
+                  $and: [
+                    {
+                      $ne: [
+                        student.preferredIntake || "",
+                        "",
+                      ],
+                    },
+                    {
+                      $in: [
+                        student.preferredIntake || "",
+                        "$intakes",
+                      ],
+                    },
+                  ],
+                },
+                10,
+                0,
+              ],
+            },
+
+            {
+              $cond: [
+                {
+                  $gte: [
+                    student.englishTest?.score || 0,
+                    "$minimumIelts",
+                  ],
+                },
+                5,
+                0,
+              ],
+            },
+          ],
+        },
+      },
+    },
+
+    {
+      $set: {
+        reasons: {
+          $concatArrays: [
+            {
+              $cond: [
+                {
+                  $in: ["$country", student.targetCountries || []],
+                },
+                [`Preferred country match`],
+                [],
+              ],
+            },
+
+            {
+              $cond: [
+                {
+                  $anyElementTrue: {
+                    $map: {
+                      input: student.interestedFields || [],
+                      as: "fieldPreference",
+                      in: {
+                        $regexMatch: {
+                          input: "$field",
+                          regex: "$$fieldPreference",
+                          options: "i",
+                        },
+                      },
+                    },
+                  },
+                },
+                [`Field alignment`],
+                [],
+              ],
+            },
+
+            {
+              $cond: [
+                {
+                  $gte: [
+                    student.maxBudgetUsd || 0,
+                    "$tuitionFeeUsd",
+                  ],
+                },
+                ["Within budget range"],
+                [],
+              ],
+            },
+
+            {
+              $cond: [
+                {
+                  $and: [
+                    {
+                      $ne: [
+                        student.preferredIntake || "",
+                        "",
+                      ],
+                    },
+                    {
+                      $in: [
+                        student.preferredIntake || "",
+                        "$intakes",
+                      ],
+                    },
+                  ],
+                },
+                ["Preferred intake available"],
+                [],
+              ],
+            },
+
+            {
+              $cond: [
+                {
+                  $gte: [
+                    student.englishTest?.score || 0,
+                    "$minimumIelts",
+                  ],
+                },
+                ["English test score meets requirement"],
+                [],
+              ],
+            },
+          ],
+        },
+      },
+    },
+
+    {
+      $sort: {
+        matchScore: -1,
+        tuitionFeeUsd: 1,
+      },
+    },
+// Return only the top five recommendations.
+    {
+      $limit: 5,
+    },
+  ]);
+  
+// Aggregation has already calculated the score, reasons,
+// ordering, and result limit, so no additional JavaScript
+// scoring or sorting is required.
+  const recommendations = candidatePrograms;
 
   return {
     data: {
@@ -77,8 +233,7 @@ async function buildProgramRecommendations(studentId) {
       recommendations,
     },
     meta: {
-      implementationStatus:
-        "starter-scoring-in-javascript-replace-with-mongodb-aggregation",
+      implementationStatus: "mongodb-aggregation",
     },
   };
 }

@@ -5,6 +5,10 @@ const Student = require("../models/Student");
 const asyncHandler = require("../utils/asyncHandler");
 const HttpError = require("../utils/httpError");
 
+// Authentication middleware.
+// Extracts a Bearer JWT, verifies it, loads the associated student,
+// and attaches the authenticated user to req.user. 
+
 const requireAuth = asyncHandler(async (req, res, next) => {
   const authorizationHeader = req.headers.authorization;
 
@@ -13,6 +17,8 @@ const requireAuth = asyncHandler(async (req, res, next) => {
   }
 
   const token = authorizationHeader.replace("Bearer ", "").trim();
+
+// Verify the token signature and expiration using the configured secret.
 
   try {
     const decoded = jwt.verify(token, env.jwtSecret);
