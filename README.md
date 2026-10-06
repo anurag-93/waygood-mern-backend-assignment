@@ -402,23 +402,12 @@ backend-assignment-template/
 
 ## 8. Environment Configuration
 
-Create a `.env` file inside the `backend` directory.
 
-Example:
+Create a `.env` file inside the `backend` directory using `.env.example` as a reference.
 
-```env
-PORT=4000
+The `MONGODB_URI` variable must point to a running MongoDB instance or MongoDB Atlas database.
 
-MONGODB_URI=mongodb://127.0.0.1:27017/waygood-evaluation
-
-JWT_SECRET=replace-with-a-long-secret
-JWT_EXPIRES_IN=1d
-
-CACHE_TTL_SECONDS=300
-
-REDIS_URL=
-OPENAI_API_KEY=
-```
+The `.env` file is intentionally not included in the repository because it contains environment-specific credentials.
 
 For MongoDB Atlas, the `MONGODB_URI` can be replaced with the Atlas connection string.
 
